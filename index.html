@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kéo Búa Bao 2 Người</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: system-ui, -apple-system, sans-serif;
+    background: #1a1a2e; color: #eee;
+    min-height: 100vh; display: flex;
+    align-items: center; justify-content: center;
+    padding: 20px;
+  }
+  .app { width: 100%; max-width: 480px; text-align: center; }
+  h1 { font-size: 24px; margin-bottom: 20px; color: #e94560; }
+
+  .panel {
+    background: #16213e; border-radius: 12px;
+    padding: 20px; margin-bottom: 16px;
+  }
+
+  input {
+    width: 100%; padding: 12px; border-radius: 8px;
+    border: 1px solid #0f3460; background: #0f3460;
+    color: #eee; font-size: 16px; margin-bottom: 12px;
+  }
+  input:focus { outline: 2px solid #e94560; }
+
+  button {
+    padding: 12px 20px; border: none; border-radius: 8px;
+    background: #e94560; color: white; font-size: 16px;
+    cursor: pointer; transition: 0.2s;
+  }
+  button:hover:not(:disabled) { background: #c73650; }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  .choices { display: flex; gap: 10px; justify-content: center; margin: 16px 0; }
+  .choices button {
+    flex: 1; font-size: 32px; padding: 20px 0;
+    background: #0f3460;
+  }
+  .choices button:hover:not(:disabled) { background: #1a4a7a; }
+  .choices button.selected { background: #e94560; }
+
+  #status { font-size: 14px; color: #aaa; margin-bottom: 12px; }
+  #result { font-size: 20px; font-weight: bold; min-height: 28px; margin: 12px 0; }
+  .win { color: #4ade80; }
+  .lose { color: #f87171; }
+  .draw { color: #fbbf24; }
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+<div class="app">
+  <h1>Kéo Búa Bao</h1>
+
+  <!-- Màn hình vào phòng -->
+  <div id="lobby" class="panel">
+    <input id="roomInput" placeholder="Nhập mã phòng (ví dụ: abc123)" />
+    <button id="joinBtn">Vào phòng</button>
+  </div>
+
+  <!-- Màn hình game -->
+  <div id="game" class="panel hidden">
+    <div id="status">Đang kết nối...</div>
+    <div class="choices">
+      <button data-choice="1">✊</button>
+      <button data-choice="2">✋</button>
+      <button data-choice="3">✌️</button>
+    </div>
+    <div id="result"></div>
+    <button id="resetBtn" class="hidden">Vòng tiếp theo</button>
+  </div>
+</div>
+
+<script type="module">
+// ============ Cấu hình ============
+const MQTT_BROKER = 'wss://broker.emqx.io:8084/mqtt'; // Broker công cộng miễn phí
+const ICE_SERVERS = [{ urls: 'stun:stun.l.google.com:19302' }];
+
+// ============ Trạng thái ============
+let mqttClient, pc, dataChannel;
+let roomId, myId, peerId;
+let myChoice = null, peerChoice = null;
+
+const $ = id => document.getElementById(id);
+
+// ============ Bắt đầu vào phòng ============
+$('joinBtn').onclick = () => {
+  roomId = $('roomInput').value.trim();
+  if (!roomId) return alert('Vui lòng nhập mã phòng');
+
+  myId = Math.random().toString(36).slice(2, 10);
+  $('lobby').classList.add('hidden');
+  $('game').classList.remove('hidden');
+  connectMQTT();
+};
+
+// ============ Kết nối MQTT để signaling ============
+function connectMQTT() {
+  mqttClient = mqtt.connect(MQTT_BROKER);
+  const topic = `rps/${roomId}`;
+
+  mqttClient.on('connect', () => {
+    $('status').textContent = 'Đã kết nối, đang chờ đối thủ...';
+    mqttClient.subscribe(topic);
+    // Thông báo mình đã vào phòng
+    sendMQTT({ type: 'hello', from: myId });
+  });
+
+  mqttClient.on('message', async (t, payload) => {
+    const msg = JSON.parse(payload.toString());
+    if (msg.from === myId) return; // Bỏ qua tin nhắn của chính mình
+
+    // Xử lý theo loại tin nhắn
+    if (msg.type === 'hello') {
+      // Có người vào phòng, nếu mình chưa có đối thủ thì bắt đầu handshake
+      if (!peerId && myId < msg.from) { // Dùng so sánh ID để quyết định ai chủ động
+        peerId = msg.from;
+        await createOffer();
+      } else if (!peerId) {
+        peerId = msg.from;
+      }
+    } else if (msg.type === 'offer' && msg.to === myId) {
+      peerId = msg.from;
+      await handleOffer(msg.sdp);
+    } else if (msg.type === 'answer' && msg.to === myId) {
+      await pc.setRemoteDescription(msg.sdp);
+    } else if (msg.type === 'ice' && msg.to === myId) {
+      try { await pc.addIceCandidate(msg.candidate); } catch (e) {}
+    }
+  });
+}
+
+function sendMQTT(obj) {
+  mqttClient.publish(`rps/${roomId}`, JSON.stringify(obj));
+}
+
+// ============ WebRTC ============
+function createPeerConnection() {
+  pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+
+  pc.onicecandidate = (e) => {
+    if (e.candidate) {
+      sendMQTT({ type: 'ice', from: myId, to: peerId, candidate: e.candidate });
+    }
+  };
+
+  pc.onconnectionstatechange = () => {
+    if (pc.connectionState === 'connected') {
+      $('status').textContent = 'Đã kết nối với đối thủ!';
+    }
+  };
+}
+
+function setupDataChannel(channel) {
+  dataChannel = channel;
+  dataChannel.onopen = () => {
+    $('status').textContent = 'Đã kết nối! Chọn kéo búa bao.';
+  };
+  dataChannel.onmessage = (e) => {
+    const msg = JSON.parse(e.data);
+    if (msg.type === 'choice') {
+      peerChoice = msg.value;
+      checkResult();
+    }
+  };
+}
+
+async function createOffer() {
+  createPeerConnection();
+  setupDataChannel(pc.createDataChannel('game'));
+  const offer = await pc.createOffer();
+  await pc.setLocalDescription(offer);
+  sendMQTT({ type: 'offer', from: myId, to: peerId, sdp: offer });
+}
+
+async function handleOffer(sdp) {
+  createPeerConnection();
+  pc.ondatachannel = (e) => setupDataChannel(e.channel);
+  await pc.setRemoteDescription(sdp);
+  const answer = await pc.createAnswer();
+  await pc.setLocalDescription(answer);
+  sendMQTT({ type: 'answer', from: myId, to: peerId, sdp: answer });
+}
+
+// ============ Logic game ============
+document.querySelectorAll('.choices button').forEach(btn => {
+  btn.onclick = () => {
+    if (!dataChannel || dataChannel.readyState !== 'open') return;
+    myChoice = parseInt(btn.dataset.choice);
+    document.querySelectorAll('.choices button').forEach(b => b.classList.remove('selected'));
+    btn.classList.add('selected');
+
+    dataChannel.send(JSON.stringify({ type: 'choice', value: myChoice }));
+    $('result').textContent = 'Đã chọn, chờ đối thủ...';
+    $('result').className = '';
+  };
+});
+
+function checkResult() {
+  if (myChoice === null || peerChoice === null) return;
+
+  const names = { 1: '✊', 2: '✋', 3: '✌️' };
+  let text, cls;
+
+  if (myChoice === peerChoice) {
+    text = `Hòa! Cả hai ra ${names[myChoice]}`; cls = 'draw';
+  } else {
+    const win = { 1: 2, 2: 3, 3: 1 };
+    if (win[myChoice] === peerChoice) {
+      text = `Bạn thắng! ${names[myChoice]} thắng ${names[peerChoice]}`; cls = 'win';
+    } else {
+      text = `Bạn thua! ${names[myChoice]} thua ${names[peerChoice]}`; cls = 'lose';
+    }
+  }
+
+  $('result').textContent = text;
+  $('result').className = cls;
+  $('resetBtn').classList.remove('hidden');
+}
+
+$('resetBtn').onclick = () => {
+  myChoice = null; peerChoice = null;
+  document.querySelectorAll('.choices button').forEach(b => b.classList.remove('selected'));
+  $('result').textContent = '';
+  $('result').className = '';
+  $('resetBtn').classList.add('hidden');
+};
+</script>
+</body>
+</html>
