@@ -220,7 +220,7 @@ canvas{ display:block; width:100%; height:100%; }
 <button id="setBtn">⚙ SETTING</button>
 
 <div id="joy"><div id="knob"></div></div>
-<button id="fire">BẮN</button>
+<button id="fire">B���N</button>
 <button id="jump">NHẢY</button>
 <button id="reload">NẠP</button>
 
@@ -334,7 +334,7 @@ const P = {
 /* ========== SÚNG ========== */
 const GUN = {
     dmgBody: 67,
-    dmgHead: 210,
+    dmgHead: 100,
     fireRate: 350,
     spread: 0.015,
     mag: 7
@@ -449,6 +449,10 @@ J.addEventListener('pointerup', e => {
 let lid = null;
 let lx = 0, ly = 0;
 
+function clearCameraDrag() {
+    lid = null;
+}
+
 window.addEventListener('pointerdown', e => {
     if (e.target === J || e.target.closest('#joy')) return;
     if (e.target === document.getElementById('jump')) return;
@@ -482,6 +486,11 @@ window.addEventListener('pointermove', e => {
 window.addEventListener('pointerup', e => {
     if (e.pointerId === lid) lid = null;
 });
+window.addEventListener('pointercancel', clearCameraDrag);
+window.addEventListener('pointerleave', () => {
+    if (lid !== null) clearCameraDrag();
+});
+window.addEventListener('blur', clearCameraDrag);
 
 /* ========== NHẢY ========== */
 document.getElementById('jump').addEventListener('pointerdown', e => {
