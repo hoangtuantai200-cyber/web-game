@@ -220,7 +220,7 @@ canvas{ display:block; width:100%; height:100%; }
 <button id="setBtn">⚙ SETTING</button>
 
 <div id="joy"><div id="knob"></div></div>
-<button id="fire">B���N</button>
+<button id="fire">BẮN</button>
 <button id="jump">NHẢY</button>
 <button id="reload">NẠP</button>
 
@@ -235,7 +235,7 @@ canvas{ display:block; width:100%; height:100%; }
             <div class="sub">kéo tâm lúc KHÔNG bắn — 0 = đơ, 100 = mặc định</div>
             <div class="sensRow">
                 <button id="camMinus">−</button>
-                <input type="number" id="camInput" min="0" max="1000" value="100">
+                <input type="number" id="camInput" min="0" max="1000" value="50">
                 <button id="camPlus">+</button>
             </div>
         </div>
@@ -245,7 +245,7 @@ canvas{ display:block; width:100%; height:100%; }
             <div class="sub">kéo tâm lúc ĐANG GIỮ nút bắn — 0 = đơ, 100 = mặc định</div>
             <div class="sensRow">
                 <button id="shootMinus">−</button>
-                <input type="number" id="shootInput" min="0" max="1000" value="100">
+                <input type="number" id="shootInput" min="0" max="1000" value="50">
                 <button id="shootPlus">+</button>
             </div>
         </div>
@@ -259,9 +259,9 @@ canvas{ display:block; width:100%; height:100%; }
 
 /* ========== SETTING ========== */
 const CFG = {
-    camSens: 100,
-    shootSens: 100,
-    shootDelay: 300   /* 300ms delay trước khi đạn bay */
+    camSens: 50,
+    shootSens: 50,
+    shootDelay: 300
 };
 
 /* ========== SCENE ========== */
@@ -333,8 +333,8 @@ const P = {
 
 /* ========== SÚNG ========== */
 const GUN = {
-    dmgBody: 67,
-    dmgHead: 100,
+    dmgBody: 100,
+    dmgHead: 120,
     fireRate: 350,
     spread: 0.015,
     mag: 7
@@ -402,7 +402,8 @@ function spawnEnemies() {
     colors.forEach((c, i) => {
         const e = makeEnemy(c[0], c[1]);
         e.position.set(-10 + i * 10, 0, -18);
-        e.userData = { hp: 200, alive: true };
+        e.userData.hp = 200;
+        e.userData.alive = true;
         S.add(e);
         enemies.push(e);
     });
@@ -547,7 +548,7 @@ function nearestBody() {
 /* ========== BẮN — CÓ DELAY ========== */
 let lastFire = 0;
 let fireHeld = false;
-let pendingShot = null;  /* timeout id của phát đang chờ */
+let pendingShot = null;
 
 function shoot() {
     const now = performance.now();
@@ -619,9 +620,6 @@ fireBtn.addEventListener('pointerdown', e => {
     e.preventDefault();
     fireHeld = true;
 
-    /* =========================================
-       AIMBOT BODY — GHIM 1 LẦN NGAY KHI BẤM BẮN
-    ========================================= */
     const target = nearestBody();
     if (target) {
         const bodyPos = target.position.clone();
@@ -633,10 +631,6 @@ fireBtn.addEventListener('pointerdown', e => {
         P.pitch = Math.asin(to.y);
     }
 
-    /* =========================================
-       DELAY 300ms TRƯỚC KHI ĐẠN BAY RA
-       Trong 300ms đó mày có thể kéo lên đầu
-    ========================================= */
     if (pendingShot) clearTimeout(pendingShot);
     pendingShot = setTimeout(() => {
         pendingShot = null;
@@ -646,7 +640,6 @@ fireBtn.addEventListener('pointerdown', e => {
 
 fireBtn.addEventListener('pointerup', () => {
     fireHeld = false;
-    /* không hủy pendingShot — đạn vẫn bay sau 300ms kể cả nhả tay */
 });
 
 fireBtn.addEventListener('pointercancel', () => fireHeld = false);
@@ -800,8 +793,8 @@ function bindSens(inputId, minusId, plusId, key, defaultValue) {
     setVal(CFG[key]);
 }
 
-bindSens('camInput', 'camMinus', 'camPlus', 'camSens', 100);
-bindSens('shootInput', 'shootMinus', 'shootPlus', 'shootSens', 100);
+bindSens('camInput', 'camMinus', 'camPlus', 'camSens', 50);
+bindSens('shootInput', 'shootMinus', 'shootPlus', 'shootSens', 50);
 
 document.getElementById('setBtn').addEventListener('pointerdown', e => {
     e.preventDefault();
